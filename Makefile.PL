@@ -15,7 +15,7 @@ WriteMakefile(
     VERSION_FROM => 'lib/mup.pm',
     PREREQ_PM => {
 	'Data::SExpression' => 0,
-	'IPC::Open2',
+	'IPC::Open2' => 0,
     },
     PM => {
 	PAIR('mup.pm'),
