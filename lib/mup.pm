@@ -92,6 +92,12 @@ has 'tout' => (
     default => 0.5,
     required => 1,
 );
+has 'orig_tout' => (
+    is => 'rw',
+    isa => 'Num',
+    default => 0.5,
+    required => 1,
+);
 has 'select' => (
     is => 'ro',
     isa => 'Object',
@@ -142,6 +148,7 @@ sub BUILD {
     my($in,$out);
     my($bin,$cmd) = ($self->mu_bin,$self->mu_server_cmd);
     my $pid = open2($out,$in,$bin,$cmd);
+    $self->orig_tout($self->tout);
     $self->pid($pid);
     $self->out($out);
     $self->in($in);
@@ -364,7 +371,14 @@ sub _quote {
 }
 
 sub _argify {
+    my $self = shift(@_);
     my $href = _refify(@_);
+    if (exists($href->{'timeout'})) {
+        $self->tout($href->{'timeout'});
+        warn("mup: tout ".$self->orig_tout." => ".$self->tout."\n")
+            if $self->verbose;
+        delete($href->{'timeout'});
+    }
     join(' ', map { "$_:"._quote($href->{$_}) } keys(%$href));
 }
 
@@ -388,7 +402,7 @@ sub _argify {
 #+Moose
 sub _execute {
     my($self,$cmd,@args) = @_;
-    my $args = _argify(@args);
+    my $args = $self->_argify(@args);
     my $cmdstr = "cmd:$cmd $args";
     warn("mup: >>> $cmdstr\n") if $self->verbose;
     if ($self->inbuf) {
@@ -399,6 +413,7 @@ sub _execute {
     $self->in->write("$cmdstr\n");
     $self->in->flush();
     $self->_read();
+    $self->tout($self->orig_tout);
     return $self->_parse();
 }
 
