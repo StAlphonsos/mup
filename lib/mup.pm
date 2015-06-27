@@ -131,10 +131,10 @@ sub _parse1 {
     my($self) = @_;
     my $raw = $self->{'inbuf'};
     return undef unless $raw;
-    my($xcount,$raw) = ($1,$2) if $raw =~ /^\376([\da-f]+)\377(.*)$/;
+    my($xcount,$left) = ($1,$2) if $raw =~ /^\376([\da-f]+)\377(.*)$/;
     my $count = hex($xcount);
-    my $sexp = substr($raw,0,$count);
-    $self->{'inbuf'} = substr($raw,$count);
+    my $sexp = substr($left,0,$count);
+    $self->{'inbuf'} = substr($left,$count);
     my @results = ();
     $self->_reset_parser();
     my $data = $self->{'ds'}->read($sexp);
