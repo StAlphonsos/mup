@@ -16,7 +16,8 @@ WriteMakefile(
     PREREQ_PM => {
 	'Data::SExpression' => 0,
 	'IPC::Open2' => 0,
-	'Test::More' => 0,
+	'Moose' => 0,
+	'namespace::clean' => 0,
     },
     PM => {
 	PAIR('mup.pm'),
