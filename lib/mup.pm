@@ -190,7 +190,7 @@ sub _read {
 sub _reset_parser {
 }
 
-sub _parse1 {
+sub _parse {
     my($self) = @_;
     my $raw = $self->inbuf;
     return undef unless $raw;
@@ -202,8 +202,9 @@ sub _parse1 {
     chomp(my $sexp = substr($left,0,$count));
     $self->inbuf(substr($left,$count));
     my $data = $self->ds->read($sexp);
+    return undef unless defined($data);
     warn("mup: parsed sexp: $data\n") if $self->verbose;
-    return $data;
+    return $self->_hashify($data);
 }
 
 sub _hashify {
@@ -238,13 +239,6 @@ sub _hashify {
         }
     }
     return $result;
-}
-
-sub _parse {
-    my($self) = @_;
-    my $raw = $self->_parse1();
-    return undef unless $raw;
-    return $self->_hashify($raw);
 }
 
 =pod
