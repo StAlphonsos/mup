@@ -12,7 +12,7 @@ mup - perl interface to mu
 
   my $mu = mup->new();
 
-  my @results = $mu->find({ subject => 'something'});
+  my $results = $mu->find({ subject => 'something'});
   print scalar(@results)." results for subject:something\n";
 
 =head1 DESCRIPTION
@@ -301,20 +301,40 @@ sub _parse1 {
     my $data = $self->ds->read($sexp);
     warn("mup: parsed sexp: $data\n") if $self->verbose;
     my $result = $data;
-    if (ref($data) eq 'ARRAY') {
+    return $result;
+}
+
+sub _hashify {
+    my($self,$thing) = @_;
+    my $rthing = ref($thing);
+    my $result = $thing;
+    warn("mup: rthing=$rthing: $thing\n") if $self->verbose;
+    return $result unless $rthing;
+    if ($rthing eq 'Data::SExpression::Symbol') {
+        if ($thing eq 'nil') {
+            $result = undef;
+        } elsif ($thing eq 't') {
+            $result = 1;
+        }
+    } elsif ($rthing eq 'ARRAY') {
         $result = {};
-        warn("mup: parsing array") if $self->verbose;
-        while (scalar(@$data)) {
-            my($key,$val) = splice(@$data,0,2);
-            warn("mup: key=$key val=|$val|\n") if $self->verbose;
-            $key =~ s/^://;
-            $result->{$key} = $val;
+        while (scalar(@$thing)) {
+            my($key,$val) = splice(@$thing,0,2);
+            $key = "$1" if "$key" =~ /^:(.*)$/;
+            warn("mup: key=$key val=(".ref($val).") |$val|\n")
+                if $self->verbose;
+            $result->{$key} = $self->_hashify($val);
         }
     }
     return $result;
 }
 
-sub _parse { return shift->_parse1(); }
+sub _parse {
+    my($self) = @_;
+    my $raw = $self->_parse1();
+    return undef unless $raw;
+    return $self->_hashify($raw);
+}
 
 =pod
 
