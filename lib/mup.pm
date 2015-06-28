@@ -12,7 +12,7 @@ mup - perl interface to mu
 
   my $mu = mup->new();
 
-  my $results = $mu->find({ subject => 'something'});
+  my @results = $mu->find({ subject => 'something'});
   print scalar(@results)." results for subject:something\n";
 
 =head1 DESCRIPTION
@@ -39,29 +39,6 @@ use namespace::clean;
 
 $VERSION = '0.1.0';
 
-#-Moose
-# sub _init {
-#     my $self = shift(@_);
-#     $self->{'opts'} ||= (@_ && ref($_[0]))? $_[0]: { @_ };
-#     my $bin = $self->_opt('mu_bin','mu');
-#     my $cmd = $self->_opt('mu_server_cmd','server');
-#     my($mu_out,$mu_in);
-#     $self->{'_dead'} = 0;
-#     $self->{'pid'} = open2($mu_out,$mu_in,$bin,$cmd);
-#     $self->{'out'} = $mu_out;
-#     $self->{'in'} = $mu_in;
-#     $self->{'tout'} = $self->_opt('timeout',0.5);
-#     $self->{'select'} = IO::Select->new();
-#     $self->{'select'}->add($mu_out);
-#     $self->{'inbuf'} = '';
-#     $self->{'dying'} = 0;
-#     $self->{'ds'} =
-#         Data::SExpression->new({fold_alists=>1,use_symbol_class=>1});
-#     my $junk = $self->_read();
-#     warn("mup: _init junk: $junk\n") if $self->verbose;
-# }
-
-#+Moose
 has 'dying' => (
     is => 'rw',
     isa => 'Bool',
@@ -107,7 +84,7 @@ has 'select' => (
 has 'inbuf' => (
     is => 'rw',
     isa => 'Str',
-    default => sub { '' },
+    default => '',
     required => 1,
 );
 has 'ds' => (
@@ -143,7 +120,7 @@ has 'bufsiz' => (
     required => 1,
 );
 
-sub BUILD {
+sub _init {
     my $self = shift(@_);
     my($in,$out);
     my($bin,$cmd) = ($self->mu_bin,$self->mu_server_cmd);
@@ -155,30 +132,17 @@ sub BUILD {
     $self->select->add($out);
     my $junk = $self->_read();
     warn("mup: _init junk: $junk\n") if $self->verbose;
+    return $self;
 }
 
-#-Moose
-# sub _cleanup {
-#     my($self) = @_;
-#     if ($self->{'pid'}) {
-#         warn("mup: reaping mu server pid ".$self->{pid}) if $self->verbose;
-#         waitpid($self->{'pid'},0);
-#         $self->{'pid'} = undef;
-#     }
-#     if ($self->{'inbuf'}) {
-#         warn("mup: restart pitching inbuf: |".$self->{inbuf}."|\n")
-#             if $self->verbose;
-#         $self->{'inbuf'} = '';
-#     }
-# }
+sub BUILD { shift->_init(); }
 
-#+Moose
 sub _cleanup {
     my($self) = @_;
     if ($self->pid) {
         warn("mup: reaping mu server pid ".$self->pid."\n") if $self->verbose;
         waitpid($self->pid,0);
-        $self->pid(undef);
+        $self->pid(0);
     }
     if ($self->inbuf) {
         warn("mup: restart pitching inbuf: |".$self->inbuf."|\n")
@@ -190,7 +154,6 @@ sub _cleanup {
 sub restart {
     my($self) = @_;
     $self->_cleanup();
-    $self->_init();
 }
 
 sub reset {
@@ -199,33 +162,6 @@ sub reset {
     return $self;
 }
 
-#-Moose
-# sub _read {
-#     my($self) = @_;
-#     my $restart_needed = 0;
-#     my @ready = $self->{'select'}->can_read($self->{'tout'});
-#     my $bufsiz = $self->_opt('bufsiz',2048);
-#     while (@ready && !$restart_needed) {
-#         foreach my $handle (@ready) {
-#             my $buf = '';
-#             my $nread = $handle->sysread($buf,$bufsiz);
-#             if (!$nread) {
-#                 warn("mup: mu server died - restarting") if $self->verbose();
-#                 $restart_needed = 1;
-#             } else {
-#                 $self->{'inbuf'} .= $buf;
-#                 warn("mup: <<< |$buf|\n") if $self->verbose;
-#             }
-#         }
-#         @ready = $self->{'select'}->can_read($self->{'tout'})
-#             unless $restart_needed;
-#     }
-#     my $result = $self->{'inbuf'};
-#     $self->_cleanup() if ($self->{'dying'} || $restart_needed);
-#     $self->_init() if $restart_needed;
-#     return $result;
-# }
-#+Moose
 sub _read {
     my($self) = @_;
     my $restart_needed = 0;
@@ -247,44 +183,13 @@ sub _read {
     }
     my $result = $self->inbuf;
     $self->_cleanup() if ($self->dying || $restart_needed);
-    $self->_init() if $restart_needed;
+    $self->_init() if $restart_needed && !$self->dying;
     return $result;
 }
 
 sub _reset_parser {
 }
 
-#-Moose
-# sub _parse1 {
-#     my($self) = @_;
-#     my $raw = $self->{'inbuf'};
-#     return undef unless $raw;
-#     my($xcount,$left) = ($1,$2) if $raw =~ /^\376([\da-f]+)\377(.*)$/s;
-#     my $count = hex($xcount);
-#     my $nleft = length($left);
-#     warn("mup: count=$count length=$nleft: |$left|\n")
-#         if $self->verbose;
-#     chomp(my $sexp = substr($left,0,$count));
-#     $self->{'inbuf'} = substr($left,$count);
-#     my @results = ();
-#     $self->_reset_parser();
-#     my $data = $self->{'ds'}->read($sexp);
-#     warn("mup: parsed sexp: $data\n") if $self->verbose;
-#     my $result = $data;
-#     if (ref($data) eq 'ARRAY') {
-#         $result = {};
-#         warn("mup: parsing array") if $self->verbose;
-#         while (scalar(@$data)) {
-#             my($key,$val) = splice(@$data,0,2);
-#             warn("mup: key=$key val=|$val|\n") if $self->verbose;
-#             $key =~ s/^://;
-#             $result->{$key} = $val;
-#         }
-#     }
-#     return $result;
-# }
-
-#+Moose
 sub _parse1 {
     my($self) = @_;
     my $raw = $self->inbuf;
@@ -296,12 +201,9 @@ sub _parse1 {
         if $self->verbose;
     chomp(my $sexp = substr($left,0,$count));
     $self->inbuf(substr($left,$count));
-    my @results = ();
-    $self->_reset_parser();
     my $data = $self->ds->read($sexp);
     warn("mup: parsed sexp: $data\n") if $self->verbose;
-    my $result = $data;
-    return $result;
+    return $data;
 }
 
 sub _hashify {
@@ -321,7 +223,16 @@ sub _hashify {
         while (scalar(@$thing)) {
             my($key,$val) = splice(@$thing,0,2);
             $key = "$1" if "$key" =~ /^:(.*)$/;
-            warn("mup: key=$key val=(".ref($val).") |$val|\n")
+            warn("mup: ARRAY key=$key val=(".ref($val).") |$val|\n")
+                if $self->verbose;
+            $result->{$key} = $self->_hashify($val);
+        }
+    } elsif ($rthing eq 'HASH') {
+        $result = {};
+        foreach my $key (keys(%$thing)) {
+            my $val = $thing->{$key};
+            $key = "$1" if "$key" =~ /^:(.*)$/;
+            warn("mup: HASH key=$key val=(".ref($val).") |$val|\n")
                 if $self->verbose;
             $result->{$key} = $self->_hashify($val);
         }
@@ -354,34 +265,20 @@ Shut down the mu server.
 
 =cut
 
-#-Moose
-# sub finish {
-#     my($self) = @_;
-#     if ($self->{'pid'}) {
-#         $self->{'dying'} = 1;
-#         $self->{'in'}->write("cmd:quit\n"); # will cause EOF eventually
-#         $self->{'in'}->flush();
-#         my $junk = $self->_read();
-#         warn("mup: trailing garbage in finish: |$junk|\n") if $self->verbose;
-#     }
-# }
-
-#+Moose
 sub finish {
     my($self) = @_;
     if ($self->pid) {
-        $self->dying = 1;
-        $self->in->write("cmd:quit\n"); # will cause EOF eventually
-        $self->in->flush();
+        $self->dying(1);
+        $self->_send("cmd:quit");
         my $junk = $self->_read();
         warn("mup: trailing garbage in finish: |$junk|\n") if $self->verbose;
     }
 }
 
+sub DEMOLISH { shift->finish(); }
+
 sub _refify {
-    my $href = $_[0] if @_ && ref($_[0]) eq 'HASH';
-    $href ||= { @_ };
-    $href;
+    return ((@_ == 1) && (ref($_[0]) eq 'HASH')) ? $_[0] : { @_ };
 }
 
 sub _quote {
@@ -399,27 +296,16 @@ sub _argify {
             if $self->verbose;
         delete($href->{'timeout'});
     }
-    join(' ', map { "$_:"._quote($href->{$_}) } keys(%$href));
+    return join(' ', map { "$_:"._quote($href->{$_}) } keys(%$href));
 }
 
-#-Moose
-# sub _execute {
-#     my($self,$cmd,@args) = @_;
-#     my $args = _argify(@args);
-#     my $cmdstr = "cmd:$cmd $args";
-#     warn("mup: >>> $cmdstr\n") if $self->verbose;
-#     if ($self->{'inbuf'}) {
-#         my $junk = $self->{'inbuf'};
-#         warn("mup: pitching |$junk|\n") if $self->verbose;
-#     }
-#     $self->{'inbuf'} = '';
-#     $self->{'in'}->write("$cmdstr\n");
-#     $self->{'in'}->flush();
-#     $self->_read();
-#     return $self->_parse();
-# }
+sub _send {
+    my($self,$str) = @_;
+    $self->in->write("$str\n");
+    $self->in->flush();
+    return $self;
+}
 
-#+Moose
 sub _execute {
     my($self,$cmd,@args) = @_;
     my $args = $self->_argify(@args);
@@ -430,22 +316,11 @@ sub _execute {
         warn("mup: pitching |$junk|\n") if $self->verbose;
     }
     $self->inbuf('');
-    $self->in->write("$cmdstr\n");
-    $self->in->flush();
+    $self->_send($cmdstr);
     $self->_read();
     $self->tout($self->orig_tout);
     return $self->_parse();
 }
-
-#sub AUTOLOAD {
-#    my $self = shift(@_);
-#    my $name = $AUTOLOAD;
-#    $name =~ s/^mup:://;
-#    my $cmd = $name;
-#    $cmd =~ s/[_\s]+/-/gs;
-#    warn("mup: AUTOLOAD: $name -> $cmd @_\n") if $self->_verbose();
-#    return $self->_execute($cmd,@_)
-#}
 
 =pod
 
