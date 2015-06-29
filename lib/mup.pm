@@ -512,13 +512,19 @@ sub _execute {
 
 =item * add (path => "/path/to/file", maildir => "/my/Maildir")
 
-Add a message (document) to the database.
+Add a message (document) to the database.  If C<maildir> is not
+specified the right thing is filled in.
 
 =back
 
 =cut
 
-sub add { shift->_execute('add',@_); }
+sub add {
+    my $self = shift(@_);
+    my $argref = _refify(@_);
+    $argref->{'maildir'} = $self->_our_maildir() unless $argref->{'maildir'};
+    $self->_execute('add',$argref);
+}
 
 
 
