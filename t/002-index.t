@@ -21,14 +21,24 @@ use strict;
 use warnings;
 use Data::Dumper;
 use mup;
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 use t::lib;
+
+sub update_status {
+    my($href) = @_;
+    return unless $ENV{'TEST_VERBOSE'};
+    local $Data::Dumper::Terse = 1; # cheesy
+    local $Data::Dumper::Indent = 0;
+    warn("$0: update_status: ".Dumper($href)."\n");
+}
 
 my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
 ok($mu,"constructor won");
 my $i = $mu->index();
 ok($i,"index won: ".Dumper($i));
+my $j = $mu->index(callback => \&update_status);
+ok($j,"index w/callback won");
 ok($mu->finish(),"finish won");
 
 ##

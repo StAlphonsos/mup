@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 ##
-# filename.t - describe test
+# 003-cfind.t - exercise contacts command
 ##
 # Copyright (C) 2015 by attila <attila@stalphonsos.com>
 # 
@@ -20,13 +20,27 @@
 use strict;
 use warnings;
 use mup;
-use Test::More tests => 2;
+use Test::More tests => 10;
 
 use t::lib;
 
 my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
 ok($mu,"constructor won");
-
+my $c = $mu->contacts;
+ok(ref($c) eq 'HASH',"contacts returned a hashref");
+ok(ref($c->{'contacts'}) eq 'ARRAY',"contacts returned an array");
+my @clist = map { $_->{'mail'} } @{$c->{'contacts'}};
+ok(scalar(@clist) == 5,"right number of contacts in array".join(", ",@clist));
+sub have {
+    my($a,@l) = @_;
+    my $n = grep { $_ eq $a } @l;
+    ok($n, "$a is in the list");
+}
+have('tech@openbsd.org',@clist);
+have('habeus@stalphonsos.com',@clist);
+have('guenther@gmail.com',@clist);
+have('mark.kettenis@xs4all.nl',@clist);
+have('slashdot@newsletters.slashdot.org',@clist);
 ok($mu->finish(),"finish won");
 
 ##

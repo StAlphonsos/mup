@@ -34,7 +34,14 @@ doing, that's just how C<mu> rolls).
 In order to stay agnostic with respect to the use our clients put us
 to, all exported methods return plain, unblessed hashrefs as their
 result.  The shape of this hashref corresponds to the S-Expression
-described in the L<mu-server(1)> man page for each command.
+described in the L<mu-server(1)> man page for each command.  Since
+everything that comes back from the server is represented as a list
+(to us: array), we use a simple heuristic to determine if a an array
+in the output is hashrefian or not: if it is of non-zero, even length
+and if every even-numbered key is a symbol that starts with a colon we
+consider the array hashrefian.  In these cases we perform the obvious
+transformation of stripping the leading colon and turning the thing
+into a hashref.
 
 =cut
 
@@ -152,6 +159,12 @@ has 'mu_home' => (
     is => 'rw',
     isa => 'Str',
     default => '',
+    required => 1,
+);
+has 'debug' => (
+    is => 'rw',
+    isa => 'Bool',
+    default => 0,
     required => 1,
 );
 
@@ -274,12 +287,16 @@ sub _parse {
     
 }
 
+# turn a LISPy keyword into a perlier hashref key
+
 sub _delispify {
     my $key = shift(@_);
     $key = "$1" if "$key" =~ /^:(.*)$/;
     $key =~ s/-/_/g;
     return $key;
 }
+
+# turn a perly argument name into a lispy one
 
 sub _lispify {
     my $key = shift(@_);
@@ -288,13 +305,15 @@ sub _lispify {
 }
 
 # _hashify - turn raw Data::SExpression result into canonical hashref
+
 sub _hashify {
     my($self,$thing) = @_;
     my $rthing = ref($thing);
     my $result = $thing;
-    warn("mup: rthing=$rthing: $thing\n") if $self->verbose;
+    warn("mup: rthing=$rthing: $thing\n") if $self->debug;
     return $result unless $rthing;
     if ($rthing eq 'Data::SExpression::Symbol') {
+        # nil is undef, t is 1, everything else becomes a string
         if ($thing eq 'nil') {
             $result = undef;
         } elsif ($thing eq 't') {
@@ -303,24 +322,47 @@ sub _hashify {
             $result = "$thing";
         }
     } elsif ($rthing eq 'ARRAY') {
-        $result = {};
-        while (scalar(@$thing)) {
-            my($key,$val) = splice(@$thing,0,2);
-            $key = _delispify($key);
-            { no strict 'vars';
-            warn("mup: ARRAY key=$key val=(".ref($val).") |$val|\n")
-                if $self->verbose;
+        my $count = scalar(@$thing);
+        my $looks_hashrefian = $count && !($count & 1);
+        if ($looks_hashrefian) {
+            my $i;
+            for ($i = 0; $i < $count; $i += 2) {
+                my $elt = $thing->[$i];
+                my $relt = ref($elt);
+                last if (($relt && $relt ne 'Data::SExpression::Symbol') ||
+                         "$elt" !~ /^:/);
             }
-            $result->{$key} = $self->_hashify($val);
+            $looks_hashrefian = ($i < $count) ? 0 : 1;
+            if ($self->debug) {
+                use Data::Dumper;
+                local $Data::Dumper::Terse = 1;
+                local $Data::Dumper::Indent = 0;
+                warn("mup: looks_hashrefian=$looks_hashrefian: ".Dumper($thing)."\n");
+            }
+        }
+        if (!$looks_hashrefian) {
+            $result = [ map { $self->_hashify($_) } @$thing ];
+        } else {
+            $result = {};
+            while (scalar(@$thing)) {
+                my($key,$val) = splice(@$thing,0,2);
+                $key = _delispify($key);
+                { no strict 'vars';
+                  warn("mup: ARRAY key=$key val=(".ref($val).") |$val|\n")
+                      if $self->debug;
+                }
+                $result->{$key} = $self->_hashify($val);
+            }
         }
     } elsif ($rthing eq 'HASH') {
+        # xxx can this happen?
         $result = {};
         foreach my $key (keys(%$thing)) {
             my $val = $thing->{$key};
             $key = _delispify($key);
             { no strict 'vars';
             warn("mup: HASH key=$key val=(".ref($val).") |$val|\n")
-                if $self->verbose;
+                if $self->debug;
             }
             $result->{$key} = $self->_hashify($val);
         }
@@ -378,6 +420,12 @@ Mu-specific files.  Defaults to C<~/.mu>.
 Root of the C<Maildir> tree that L<mu(1)> should operate on.  Defaults
 to whatever the C<$MAILDIR> environment variable is set to or
 C<~/Maildir> if it is not set.
+
+=item * debug
+
+If non-zero additional debug output will be spewed via L<warn>, mainly
+related to the transformation of L<Data::SExpression> objects into
+hashrefs.  This output is spewed independently of the value of C<verbose>.
 
 =back
 
@@ -543,9 +591,14 @@ sub find { shift->_execute('find',@_); }
 
 =over 4
 
-=item * index (path => $path, my-addresses: 'me,and,mine'
+=item * index (path => $path, my-addresses: 'me,and,mine', callback => $sub)
 
-(Re)index the messagebase.
+(Re)index the messagebase.  The mu server updates us with progress
+every 500 messages.  By default we only return the final result
+after all indexing has occurred but if the caller wants to e.g. update
+a progress meter or something it can pass us a special C<callback>
+argument that is invoked with every progress report given to us by
+the server.
 
 =back
 
@@ -561,23 +614,28 @@ sub index {
     my $self = shift(@_);
     my $argref = _refify(@_);
     $argref->{'path'} ||= $self->_our_maildir();
+    my $cb = $argref->{'callback'};
+    delete($argref->{'callback'}) if $cb;
     # The index command is special.  Unlike the others, we don't
     # necessarily send a command and get back a single response.
     # Instead we may get back a series of responses, one for each
     # 500 messages indexed.  Only the last one will be marked with
     # 'status' => 'complete', so wait for that and swallow the rest.
     my $href = $self->_execute('index',$argref);
-    while (defined($href) && $href->{'status'} ne 'complete') {
+    return undef unless $href;
+    while ($href && $href->{'status'} ne 'complete') {
         my($status,$pr,$up,$cl) =
             map { $href->{$_} } qw(status processed updated cleaned_up);
         warn("mup: index $status: $pr processed, $up updated, $cl cleaned\n")
             if $self->verbose;
+        &$cb($href) if $cb;
         $self->_read();
         my $tmp = $href;
         do {
             $tmp = $self->_parse(); # can call _read()
+            &$cb($tmp) if $cb;
             $href = $tmp if $tmp;
-        } while ($tmp);
+        } while ($tmp && $tmp->{'status'} ne 'complete');
     }
     return $href;
 }
