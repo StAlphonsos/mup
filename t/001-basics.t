@@ -23,6 +23,8 @@ use Test::More tests => 3;
 use Data::Dumper;
 use mup;
 
+use t::lib;
+
 my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
 ok($mu,"constructor won: $mu");
 my $p = $mu->ping(timeout => 2);

@@ -24,6 +24,18 @@ like the C<mu4e> emacs interface to mu does.
 
 =head1 METHODS
 
+All of the following methods take arguments named as described in the
+L<mu-server(1)> man page per each command, again either as a single
+hashref argument or as a hash of pairs in-line.  If there are any
+doubts, make sure to read the L<mu-server(1)> man page.  Where
+relevant any C<maildir> argument defaults to C<~/Maildir> (not our
+doing, that's just how C<mu> rolls).
+
+In order to stay agnostic with respect to the use our clients put us
+to, all exported methods return plain, unblessed hashrefs as their
+result.  The shape of this hashref corresponds to the S-Expression
+described in the L<mu-server(1)> man page for each command.
+
 =cut
 
 package mup;
@@ -31,11 +43,10 @@ use strict;
 use warnings;
 use vars qw($VERSION);
 use Data::SExpression;
-use IPC::Open2;
 use IO::Select;
-use Time::HiRes;
+use IPC::Open2;
 use Moose;
-use namespace::clean;
+use Time::HiRes;
 
 $VERSION = '0.1.0';
 
@@ -91,8 +102,14 @@ has 'ds' => (
     is => 'ro',
     isa => 'Object',
     default => sub {
-        Data::SExpression->new({fold_alists=>1,use_symbol_class=>1})
+        Data::SExpression->new({ fold_alists => 1, use_symbol_class => 1})
     },
+    required => 1,
+);
+has 'max_tries' => (
+    is => 'rw',
+    isa => 'Int',
+    default => 0,
     required => 1,
 );
 has 'mu_bin' => (
@@ -119,12 +136,40 @@ has 'bufsiz' => (
     default => 2048,
     required => 1,
 );
-
+has 'cur_cmd' => (
+    is => 'rw',
+    isa => 'Str',
+    default => '',
+    required => 1,
+);
+has 'maildir' => (
+    is => 'rw',
+    isa => 'Str',
+    default => $ENV{'MAILDIR'} || '',
+    required => 1,
+);
+has 'mu_home' => (
+    is => 'rw',
+    isa => 'Str',
+    default => '',
+    required => 1,
+);
 sub _init {
     my $self = shift(@_);
     my($in,$out);
-    my($bin,$cmd) = ($self->mu_bin,$self->mu_server_cmd);
-    my $pid = open2($out,$in,$bin,$cmd);
+    if ($self->maildir) {
+        $ENV{'MAILDIR'} = $self->maildir;
+        warn("mup: setting MAILDIR=".$self->maildir."\n") if $self->verbose;
+    }
+    ## opposite... a bit confusing XXX
+    if ($ENV{'MUP_MU_HOME'}) {
+        $self->mu_home($ENV{'MUP_MU_HOME'});
+        warn("mup: set --muhome ".$self->mu_home."\n") if $self->verbose;
+    }
+    my @cmdargs = ($self->mu_bin,$self->mu_server_cmd);
+    push(@cmdargs, "--muhome=".$self->mu_home) if $self->mu_home;
+    warn("mup: mu server cmd: @cmdargs\n") if $self->verbose;
+    my $pid = open2($out,$in,@cmdargs);
     $self->orig_tout($self->tout);
     $self->pid($pid);
     $self->out($out);
@@ -194,19 +239,45 @@ sub _parse {
     my($self) = @_;
     my $raw = $self->inbuf;
     return undef unless $raw;
+    my($tries,$max_tries) = (0,$self->max_tries);
+  INCOMPLETE:
     my($xcount,$left) = ($1,$2) if $raw =~ /^\376([\da-f]+)\377(.*)$/s;
     my $count = hex($xcount);
     my $nleft = length($left);
     warn("mup: count=$count length=$nleft: |$left|\n")
         if $self->verbose;
+    if ($count < $nleft) {
+        ++$tries;
+        die("mup: FATAL: waiting for $count, tried $tries, only got $nleft")
+            if ($max_tries && $tries >= $max_tries);
+        warn("mup: short buffer, reading more ($tries)...\n")
+            if $self->verbose;
+        $self->_read();
+        goto INCOMPLETE;
+    }
     chomp(my $sexp = substr($left,0,$count));
     $self->inbuf(substr($left,$count));
     my $data = $self->ds->read($sexp);
     return undef unless defined($data);
     warn("mup: parsed sexp: $data\n") if $self->verbose;
     return $self->_hashify($data);
+    
 }
 
+sub _delispify {
+    my $key = shift(@_);
+    $key = "$1" if "$key" =~ /^:(.*)$/;
+    $key =~ s/-/_/g;
+    return $key;
+}
+
+sub _lispify {
+    my $key = shift(@_);
+    $key =~ s/_/-/g;
+    return $key;
+}
+
+# _hashify - turn raw Data::SExpression result into canonical hashref
 sub _hashify {
     my($self,$thing) = @_;
     my $rthing = ref($thing);
@@ -223,7 +294,7 @@ sub _hashify {
         $result = {};
         while (scalar(@$thing)) {
             my($key,$val) = splice(@$thing,0,2);
-            $key = "$1" if "$key" =~ /^:(.*)$/;
+            $key = _delispify($key);
             warn("mup: ARRAY key=$key val=(".ref($val).") |$val|\n")
                 if $self->verbose;
             $result->{$key} = $self->_hashify($val);
@@ -232,7 +303,7 @@ sub _hashify {
         $result = {};
         foreach my $key (keys(%$thing)) {
             my $val = $thing->{$key};
-            $key = "$1" if "$key" =~ /^:(.*)$/;
+            $key = _delispify($key);
             warn("mup: HASH key=$key val=(".ref($val).") |$val|\n")
                 if $self->verbose;
             $result->{$key} = $self->_hashify($val);
@@ -243,10 +314,43 @@ sub _hashify {
 
 =pod
 
-=head2 new
+=head2 new (verbose => 1|0, ... other options... )
 
 Construct a new interface object; this will cause a C<mu server>
 process to be started.
+
+Options can be specified Moose-style, either as a hashref
+or as a hash of pairs:
+
+=over 4
+
+=item * verbose
+
+If non-zero we spew debug output to C<stderr> via L<warn>.
+
+=item * tout
+
+Timeout in seconds for responses from L<mu-server(1)>.  The
+Can be fractional.  The default is C<0.5> (500 msec).
+
+=item * bufsiz
+
+Buffer size for reads from the server.  Default is 2048.
+
+=item * max_tries
+
+Max number of times we will try to read from the server to complete
+a single transaction.  By default this is zero, which means no limit.
+
+=item * mu_bin
+
+Name of the C<mu> binary to use to start the server.
+
+=item * mu_server_cmd
+
+C<Mu> subcommand used to start the server.
+
+=back
 
 =cut
 
@@ -255,7 +359,7 @@ process to be started.
 
 =head2 finish
 
-Shut down the mu server.
+Shut down the mu server and clean up.
 
 =cut
 
@@ -272,7 +376,8 @@ sub finish {
 sub DEMOLISH { shift->finish(); }
 
 sub _refify {
-    return ((@_ == 1) && (ref($_[0]) eq 'HASH')) ? $_[0] : { @_ };
+    my $href = ((@_ == 1) && (ref($_[0]) eq 'HASH')) ? $_[0] : { @_ };
+    return { map { _lispify($_) => $href->{$_} } keys(%$href) };
 }
 
 sub _quote {
@@ -310,6 +415,7 @@ sub _execute {
         warn("mup: pitching |$junk|\n") if $self->verbose;
     }
     $self->inbuf('');
+    $self->cur_cmd($cmd);
     $self->_send($cmdstr);
     $self->_read();
     $self->tout($self->orig_tout);
@@ -318,9 +424,9 @@ sub _execute {
 
 =pod
 
-=head2 add
+=head2 add (path => "/path/to/file", maildir => "/my/Maildir")
 
-Add a document to the database.
+Add a message (document) to the database.
 
 =cut
 
@@ -330,7 +436,20 @@ sub add { shift->_execute('add',@_); }
 
 =pod
 
-=head2 contacts
+=head2 compose (type => 'reply|forward|edit|new', docid => $docid)
+
+Compose a message, either in regard to an existing one (in which case
+you must specify C<docid>) or as a new message.
+
+=cut
+
+sub compose { shift->_execute('compose',@_); }
+
+
+
+=pod
+
+=head2 contacts (personal => 1|0, after => $epoch_time)
 
 Search contacts.
 
@@ -342,7 +461,9 @@ sub contacts { shift->_execute('contacts',@_); }
 
 =pod
 
-=head2 extract
+=head2 extract (action => 'save|open|temp', index => $index, path => $path, what => $what, param => $param)
+
+Save a message into a file.
 
 =cut
 
@@ -352,9 +473,9 @@ sub extract { shift->_execute('extract',@_); }
 
 =pod
 
-=head2 find
+=head2 find (query => $mu_query, threads => 1|0, sortfield => $field, reverse => 1|0, maxnum => $max_results)
 
-Blah.
+Search the message Xapian database.
 
 =cut
 
@@ -364,33 +485,60 @@ sub find { shift->_execute('find',@_); }
 
 =pod
 
-=head2 index
+=head2 index (path => $path, my-addresses: 'me,and,mine'
 
-Blah.
+(Re)index the messagebase.
 
 =cut
 
-sub index { shift->_execute('index',@_); }
+sub index {
+    my($self) = @_;
+    # The index command is special.  Unlike the others, we don't
+    # necessarily send a command and get back a single response.
+    # Instead we may get back a series of responses, one for each
+    # 500 messages indexed.  Only the last one will be marked with
+    # 'status' => 'complete', so wait for that and swallow the rest.
+    my $href = $self->_execute('index',@_);
+    while (defined($href) && $href->{'status'} ne 'complete') {
+        my($status,$pr,$up,$cl) =
+            map { $href->{$_} } qw(status processed updated cleaned_up);
+        warn("mup: index $status: $pr processed, $up updated, $cl cleaned\n")
+            if $self->verbose;
+        $self->_read();
+        $href = $self->_parse();
+    }
+    return $href;
+}
 
 
 
 =pod
 
-=head2 move
+=head2 mkdir (path => $path)
 
-Blah.
+Make a new maildir under your Maildir basedir.
+
+=cut
+
+sub mkdir { shift->_execute('mkdir',@_); }
+
+
+=pod
+
+=head2 move ( docid => $docid | msgid => $msgid, maildir => $path, flags => $flags)
+
+Move a message from one maildir folder to another.
 
 =cut
 
 sub move { shift->_execute('move',@_); }
 
 
-
 =pod
 
-=head2 ping
+=head2 ping ()
 
-Blah.
+Ping the server to make sure it is alive.
 
 =cut
 
@@ -400,21 +548,9 @@ sub ping { shift->_execute('ping',@_); }
 
 =pod
 
-=head2 mkdir
+=head2 remove (docid => $docid)
 
-Blah.
-
-=cut
-
-sub mkdir { shift->_execute('mkdir',@_); }
-
-
-
-=pod
-
-=head2 remove
-
-Blah.
+Remove a message by document ID.
 
 =cut
 
@@ -424,9 +560,11 @@ sub remove { shift->_execute('remove',@_); }
 
 =pod
 
-=head2 view
+=head2 view ( docid => $docid | msgid => $msgid | path => $path, extract_images => 1|0, use_agent => 1|0, auto_retrieve_key => 1|0)
 
-Blah.
+Return a canonicalized view of a message, optionally with images
+and/or cryptography (PGP) dealt with.  The message can be specified by
+C<docid>, C<msgid> or as a path to a file containing the message.
 
 =cut
 
