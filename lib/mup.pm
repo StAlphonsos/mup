@@ -256,7 +256,7 @@ sub _parse {
     my $nleft = length($left);
     warn("mup: count=$count length=$nleft: |$left|\n")
         if $self->verbose;
-    if ($count < $nleft) {
+    if ($count > $nleft) {
         ++$tries;
         die("mup: FATAL: waiting for $count, tried $tries, only got $nleft")
             if ($max_tries && $tries >= $max_tries);
@@ -299,6 +299,8 @@ sub _hashify {
             $result = undef;
         } elsif ($thing eq 't') {
             $result = 1;
+        } else {
+            $result = "$thing";
         }
     } elsif ($rthing eq 'ARRAY') {
         $result = {};
@@ -316,7 +318,7 @@ sub _hashify {
         foreach my $key (keys(%$thing)) {
             my $val = $thing->{$key};
             $key = _delispify($key);
-            { no strict 'vars'
+            { no strict 'vars';
             warn("mup: HASH key=$key val=(".ref($val).") |$val|\n")
                 if $self->verbose;
             }
@@ -549,21 +551,33 @@ sub find { shift->_execute('find',@_); }
 
 =cut
 
+sub default_maildir { $ENV{'HOME'} . '/Maildir' };
+
+sub _our_maildir {
+    return shift->maildir || $ENV{'MAILDIR'} || default_maildir();
+}
+
 sub index {
-    my($self) = @_;
+    my $self = shift(@_);
+    my $argref = _refify(@_);
+    $argref->{'path'} ||= $self->_our_maildir();
     # The index command is special.  Unlike the others, we don't
     # necessarily send a command and get back a single response.
     # Instead we may get back a series of responses, one for each
     # 500 messages indexed.  Only the last one will be marked with
     # 'status' => 'complete', so wait for that and swallow the rest.
-    my $href = $self->_execute('index',@_);
+    my $href = $self->_execute('index',$argref);
     while (defined($href) && $href->{'status'} ne 'complete') {
         my($status,$pr,$up,$cl) =
             map { $href->{$_} } qw(status processed updated cleaned_up);
         warn("mup: index $status: $pr processed, $up updated, $cl cleaned\n")
             if $self->verbose;
         $self->_read();
-        $href = $self->_parse();
+        my $tmp = $href;
+        do {
+            $tmp = $self->_parse(); # can call _read()
+            $href = $tmp if $tmp;
+        } while ($tmp);
     }
     return $href;
 }

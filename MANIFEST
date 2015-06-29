@@ -1,9 +1,12 @@
+.templates/template.pm
+.templates/template.t
 lib/mup.pm
 LICENSE
 Makefile.PL
 MANIFEST			This list of files
 README.md
 t/001-basics.t
+t/002-index.t
 t/lib.pm
 t/sample.eml
 t/sample.maildir/cur/1435599858.6310_1.tldr.l.stalphonsos.net
