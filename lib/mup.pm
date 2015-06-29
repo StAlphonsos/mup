@@ -366,6 +366,17 @@ Name of the C<mu> binary to use to start the server.
 
 C<Mu> subcommand used to start the server.
 
+=item * mu_home
+
+Directory for Mu to use to store the Xapian database and other
+Mu-specific files.  Defaults to C<~/.mu>.
+
+=item * maildir
+
+Root of the C<Maildir> tree that L<mu(1)> should operate on.  Defaults
+to whatever the C<$MAILDIR> environment variable is set to or
+C<~/Maildir> if it is not set.
+
 =back
 
 =back
