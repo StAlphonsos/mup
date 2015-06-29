@@ -54,6 +54,7 @@ use IO::Select;
 use IPC::Open2;
 use Moose;
 use Time::HiRes;
+use Data::Dumper;
 
 $VERSION = '0.1.0';
 
@@ -167,6 +168,11 @@ has 'debug' => (
     default => 0,
     required => 1,
 );
+has 'update_callback' => (
+    is => 'rw',
+    default => undef,
+    required => 0,
+);
 
 sub _init {
     my $self = shift(@_);
@@ -259,7 +265,8 @@ sub _reset_parser {
 }
 
 sub _parse {
-    my($self) = @_;
+    my($self,$in_update) = @_;
+    $in_update ||= 0;
     my $raw = $self->inbuf;
     return undef unless $raw;
     my($tries,$max_tries) = (0,$self->max_tries);
@@ -283,7 +290,20 @@ sub _parse {
     my $data = $self->ds->read($sexp);
     return undef unless defined($data);
     warn("mup: parsed sexp: $data\n") if $self->verbose;
-    return $self->_hashify($data);
+    my $href = $self->_hashify($data);
+    if (!$in_update && $self->update_callback && $self->inbuf =~ /:update/) {
+        # We have an update callback.  We have an update.
+        # Peanut butter, meet chocolate.
+        local $Data::Dumper::Terse = 1;
+        local $Data::Dumper::Indent = 0;
+        my $upd = $self->_parse(1);
+        warn("mup: update: ".Dumper($upd)."\n") if $self->verbose;
+        unless ($upd && exists($upd->{'update'})) {
+            die("mup: next msg was not pending update !? ".Dumper($upd)."\n");
+        }
+        &{$self->update_callback}($upd);
+    }
+    return $href;
     
 }
 
@@ -334,7 +354,6 @@ sub _hashify {
             }
             $looks_hashrefian = ($i < $count) ? 0 : 1;
             if ($self->debug) {
-                use Data::Dumper;
                 local $Data::Dumper::Terse = 1;
                 local $Data::Dumper::Indent = 0;
                 warn("mup: looks_hashrefian=$looks_hashrefian: ".Dumper($thing)."\n");

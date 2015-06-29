@@ -26,10 +26,18 @@ use Data::Dumper;
 
 use t::lib;
 
+sub up {
+    return unless $ENV{'TEST_VERBOSE'};
+    my($upd) = @_;
+    local $Data::Dumper::Terse = 1;
+    local $Data::Dumper::Indent = 0;
+    warn("004-add.t: update: ".Dumper($upd)."\n");
+}
+
 die("004-add.t: where is my t/sample.eml?") unless -f "t/sample.eml";
 my $sample = abs_path("t/sample.eml");
 
-my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
+my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'}, update_callback => \&up);
 ok($mu,"constructor won");
 my $a = $mu->add(path => $sample);
 ok($a,"add won: ".Dumper($a));
