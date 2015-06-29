@@ -154,14 +154,24 @@ has 'mu_home' => (
     default => '',
     required => 1,
 );
+
 sub _init {
     my $self = shift(@_);
     my($in,$out);
+    # The only way I know of to tell mu server what Maildir to use is
+    # the MAILDIR environment variable.  If our caller specifies a
+    # maildir, set the envvar before we fork the server process.
     if ($self->maildir) {
         $ENV{'MAILDIR'} = $self->maildir;
         warn("mup: setting MAILDIR=".$self->maildir."\n") if $self->verbose;
     }
-    ## opposite... a bit confusing XXX
+    # Opposite logic here... a bit confusing: The testing code
+    # (c.f. t/lib.pm) wants to point us at a different .mu directory
+    # than the default (~/.mu); normally you don't want to do this
+    # but if we see a special envar ($MUP_MU_HOME) then set mu_home
+    # to this value - mu_home defaults to ''.  In any event, if
+    # mu_home is set somehow, obey it, otherwise let mu use its
+    # default.
     if ($ENV{'MUP_MU_HOME'}) {
         $self->mu_home($ENV{'MUP_MU_HOME'});
         warn("mup: set --muhome ".$self->mu_home."\n") if $self->verbose;
@@ -295,8 +305,10 @@ sub _hashify {
         while (scalar(@$thing)) {
             my($key,$val) = splice(@$thing,0,2);
             $key = _delispify($key);
+            { no strict 'vars';
             warn("mup: ARRAY key=$key val=(".ref($val).") |$val|\n")
                 if $self->verbose;
+            }
             $result->{$key} = $self->_hashify($val);
         }
     } elsif ($rthing eq 'HASH') {
@@ -304,8 +316,10 @@ sub _hashify {
         foreach my $key (keys(%$thing)) {
             my $val = $thing->{$key};
             $key = _delispify($key);
+            { no strict 'vars'
             warn("mup: HASH key=$key val=(".ref($val).") |$val|\n")
                 if $self->verbose;
+            }
             $result->{$key} = $self->_hashify($val);
         }
     }
@@ -314,7 +328,9 @@ sub _hashify {
 
 =pod
 
-=head2 new (verbose => 1|0, ... other options... )
+=over 4
+
+=item * new (verbose => 1|0, ... other options... )
 
 Construct a new interface object; this will cause a C<mu server>
 process to be started.
@@ -352,14 +368,20 @@ C<Mu> subcommand used to start the server.
 
 =back
 
+=back
+
 =cut
 
 
 =pod
 
-=head2 finish
+=over 4
+
+=item * finish
 
 Shut down the mu server and clean up.
+
+=back
 
 =cut
 
@@ -371,6 +393,7 @@ sub finish {
         my $junk = $self->_read();
         warn("mup: trailing garbage in finish: |$junk|\n") if $self->verbose;
     }
+    return 1;
 }
 
 sub DEMOLISH { shift->finish(); }
@@ -424,9 +447,13 @@ sub _execute {
 
 =pod
 
-=head2 add (path => "/path/to/file", maildir => "/my/Maildir")
+=over 4
+
+=item * add (path => "/path/to/file", maildir => "/my/Maildir")
 
 Add a message (document) to the database.
+
+=back
 
 =cut
 
@@ -436,10 +463,14 @@ sub add { shift->_execute('add',@_); }
 
 =pod
 
-=head2 compose (type => 'reply|forward|edit|new', docid => $docid)
+=over 4
+
+=item * compose (type => 'reply|forward|edit|new', docid => $docid)
 
 Compose a message, either in regard to an existing one (in which case
 you must specify C<docid>) or as a new message.
+
+=back
 
 =cut
 
@@ -449,9 +480,13 @@ sub compose { shift->_execute('compose',@_); }
 
 =pod
 
-=head2 contacts (personal => 1|0, after => $epoch_time)
+=over 4
+
+=item * contacts (personal => 1|0, after => $epoch_time)
 
 Search contacts.
+
+=back
 
 =cut
 
@@ -461,9 +496,13 @@ sub contacts { shift->_execute('contacts',@_); }
 
 =pod
 
-=head2 extract (action => 'save|open|temp', index => $index, path => $path, what => $what, param => $param)
+=over 4
+
+=item * extract (action => 'save|open|temp', index => $index, path => $path, what => $what, param => $param)
 
 Save a message into a file.
+
+=back
 
 =cut
 
@@ -473,9 +512,13 @@ sub extract { shift->_execute('extract',@_); }
 
 =pod
 
-=head2 find (query => $mu_query, threads => 1|0, sortfield => $field, reverse => 1|0, maxnum => $max_results)
+=over 4
+
+=item * find (query => $mu_query, threads => 1|0, sortfield => $field, reverse => 1|0, maxnum => $max_results)
 
 Search the message Xapian database.
+
+=back
 
 =cut
 
@@ -485,9 +528,13 @@ sub find { shift->_execute('find',@_); }
 
 =pod
 
-=head2 index (path => $path, my-addresses: 'me,and,mine'
+=over 4
+
+=item * index (path => $path, my-addresses: 'me,and,mine'
 
 (Re)index the messagebase.
+
+=back
 
 =cut
 
@@ -514,9 +561,13 @@ sub index {
 
 =pod
 
-=head2 mkdir (path => $path)
+=over 4
+
+=item * mkdir (path => $path)
 
 Make a new maildir under your Maildir basedir.
+
+=back
 
 =cut
 
@@ -525,9 +576,13 @@ sub mkdir { shift->_execute('mkdir',@_); }
 
 =pod
 
-=head2 move ( docid => $docid | msgid => $msgid, maildir => $path, flags => $flags)
+=over 4
+
+=item * move ( docid => $docid | msgid => $msgid, maildir => $path, flags => $flags)
 
 Move a message from one maildir folder to another.
+
+=back
 
 =cut
 
@@ -536,9 +591,13 @@ sub move { shift->_execute('move',@_); }
 
 =pod
 
-=head2 ping ()
+=over 4
+
+=item * ping ()
 
 Ping the server to make sure it is alive.
+
+=back
 
 =cut
 
@@ -548,9 +607,13 @@ sub ping { shift->_execute('ping',@_); }
 
 =pod
 
-=head2 remove (docid => $docid)
+=over 4
+
+=item * remove (docid => $docid)
 
 Remove a message by document ID.
+
+=back
 
 =cut
 
@@ -560,11 +623,15 @@ sub remove { shift->_execute('remove',@_); }
 
 =pod
 
-=head2 view ( docid => $docid | msgid => $msgid | path => $path, extract_images => 1|0, use_agent => 1|0, auto_retrieve_key => 1|0)
+=over 4
+
+=item * view ( docid => $docid | msgid => $msgid | path => $path, extract_images => 1|0, use_agent => 1|0, auto_retrieve_key => 1|0)
 
 Return a canonicalized view of a message, optionally with images
 and/or cryptography (PGP) dealt with.  The message can be specified by
 C<docid>, C<msgid> or as a path to a file containing the message.
+
+=back
 
 =cut
 

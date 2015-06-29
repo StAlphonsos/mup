@@ -19,11 +19,13 @@
 ##
 use strict;
 use warnings;
-use Test::More tests => 3;
+use Test::More tests => 4;
 use Data::Dumper;
 use mup;
 
 use t::lib;
+
+# basic tests: constructor, ping, finish
 
 my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
 ok($mu,"constructor won: $mu");
@@ -31,6 +33,7 @@ my $p = $mu->ping(timeout => 2);
 ok($p,"ping returned:".Dumper($p));
 my $p2 = $mu->ping();
 ok($p2,"ping2 returned:".Dumper($p2));
+ok($mu->finish(),"finish won");
 
 ##
 # Local variables:
