@@ -20,13 +20,16 @@
 use strict;
 use warnings;
 use mup;
-use Test::More tests => 2;
+use Test::More tests => 5;
 
 use t::lib;
 
 my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
 ok($mu,"constructor won");
-my $c = $mu->compose(type => 'new');
+my $v = $mu->view(docid => 1);
+ok($v,"view returned something");
+ok(exists($v->{'view'}),"view has a view element");
+ok($v->{'view'}->{'docid'} == 1,"it has the right docid");
 ok($mu->finish(),"finish won");
 
 ##

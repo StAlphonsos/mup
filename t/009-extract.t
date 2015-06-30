@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 ##
-# 008-compose.t - test the 'compose' command
+# 008-extract.t - test the 'extract' command
 ##
 # Copyright (C) 2015 by attila <attila@stalphonsos.com>
 # 
@@ -20,13 +20,28 @@
 use strict;
 use warnings;
 use mup;
-use Test::More tests => 2;
+use Test::More tests => 8;
+use Cwd qw(abs_path);
+use File::Temp qw/ :POSIX /;
 
 use t::lib;
 
+die("009-extract.t: where is my t/sample.eml?") unless -f "t/sample.eml";
+my $sample = abs_path("t/sample.eml");
+my $tmpx = tmpnam();
+END { unlink($tmpx) if -f $tmpx; }
+
 my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
 ok($mu,"constructor won");
-my $c = $mu->compose(type => 'new');
+my $a = $mu->add(path => $sample);
+ok($a,"add seems to have won");
+my $id = $a->{'docid'};
+ok($id,"new email has docid $id");
+ok(!(-f $tmpx),"temp file does not yet exist");
+my $x = $mu->extract(docid => $id,path => $tmpx,action => 'save',index => 1);
+ok($x,"extract returned something");
+ok($x->{'info'} eq 'save',"looks right");
+ok(-f $tmpx,"looks like extraction worked");
 ok($mu->finish(),"finish won");
 
 ##

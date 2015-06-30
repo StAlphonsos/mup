@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 ##
-# 003-cfind.t - exercise 'contacts' command
+# 003-contacts.t - exercise 'contacts' command
 ##
 # Copyright (C) 2015 by attila <attila@stalphonsos.com>
 # 
