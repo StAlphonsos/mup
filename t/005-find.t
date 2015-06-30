@@ -20,7 +20,7 @@
 use strict;
 use warnings;
 use mup;
-use Test::More tests => 6;
+use Test::More tests => 8;
 
 use t::lib;
 
@@ -31,6 +31,9 @@ ok($f,"find returned something");
 ok($f->{'found'} == 1,"found the right number of messages");
 ok(scalar(@{$f->{'results'}}) == 1,"count of results agrees");
 ok($f->{'results'}->[0]->{'subject'} eq 'Re: C-state FFH on x41',"found the right one");
+$f = $mu->find(query => "supercalifragilistic");
+ok($f,"query worked");
+ok($f->{'found'} == 0,"and found nothing, as expected");
 ok($mu->finish(),"finish won");
 
 ##

@@ -25,7 +25,7 @@ sub MY::postamble {
     print STDERR "To install completely:\n";
     print STDERR "    \$ make\n    \$ sudo make install\n";
     print STDERR "\nDon't forget to read the README and the POD.\n";
-    print STDERR "Examples will be installed somehwere like /usr/local/share/examples/flail\nThey are also in the eg/ subdirectory of this distribution.\n\nEat your veggies.\n\n";
+    print STDERR "\nEat your veggies.\n\n";
     return <<__MyTaRgEt__;
 OPENSSLCMD?=openssl
 MD5CMD?=\$(OPENSSLCMD) dgst -md5

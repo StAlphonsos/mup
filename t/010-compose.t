@@ -20,13 +20,27 @@
 use strict;
 use warnings;
 use mup;
-use Test::More tests => 2;
+use Test::More tests => 9;
+use Cwd qw(abs_path);
 
 use t::lib;
 
+die("010-compose.t: where is my t/sample.eml?") unless -f "t/sample.eml";
+my $sample = abs_path("t/sample.eml");
+
 my $mu = mup->new(verbose => $ENV{'TEST_VERBOSE'});
 ok($mu,"constructor won");
-my $c = $mu->compose(type => 'new');
+my $a = $mu->add(path => $sample);
+ok($a,"add seems to have won");
+my $id = $a->{'docid'};
+ok($id,"new email has docid $id");
+my $c = $mu->compose(type => 'reply', docid => $id);
+ok($c,"compose returned something");
+my @k = sort keys(%$c);
+ok(scalar(@k) == 3,"right number of keys");
+ok($k[0] eq 'compose',"first is compose");
+ok($k[1] eq 'include',"second is include");
+ok($k[2] eq 'original',"third is original");
 ok($mu->finish(),"finish won");
 
 ##
