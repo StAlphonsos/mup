@@ -11,7 +11,7 @@ mup replicates the API described in the
 variant of the [BSD license](http://en.wikipedia.org/BSD_licenses).
 
 mup works in the same way the elisp code in mu4e does: it forks
-a `mu-server` process and communicates with it.  We use the
+a `mu-server` process and communicates with it.  I use the
 [Data::SExpression](http://search.cpan.org/~nelhage/Data-SExpression-0.41/lib/Data/SExpression.pm) CPAN module to deal with `mu-server`'s LISPy result syntax,
 which we transform into the obvious hashrefian results our callers crave
 (they've got electrolytes).
@@ -21,7 +21,7 @@ which we transform into the obvious hashrefian results our callers crave
 I use standard perl testing stuff (`Test::More`).  The tests all
 operate on a temporary Maildir/mu index created by `t/lib.pm`.  If you
 are interested in hacking on or understanding the tests you should
-first look at t/lib.pm to see how the temporary setup is created and
+first look at `t/lib.pm` to see how the temporary setup is created and
 torn down.  All tests should have
 
     use t::lib;
