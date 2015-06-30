@@ -267,10 +267,10 @@ sub _reset_parser {
 sub _parse {
     my($self,$in_update) = @_;
     $in_update ||= 0;
-    my $raw = $self->inbuf;
-    return undef unless $raw;
     my($tries,$max_tries) = (0,$self->max_tries);
   INCOMPLETE:
+    my $raw = $self->inbuf;
+    return undef unless $raw;
     my($xcount,$left) = ($1,$2) if $raw =~ /^\376([\da-f]+)\377(.*)$/s;
     my $count = hex($xcount);
     my $nleft = length($left);
@@ -345,11 +345,12 @@ sub _hashify {
         my $count = scalar(@$thing);
         my $looks_hashrefian = $count && !($count & 1);
         if ($looks_hashrefian) {
+            # Non-null array with even cardinality: check for hashrefian keys
             my $i;
             for ($i = 0; $i < $count; $i += 2) {
                 my $elt = $thing->[$i];
                 my $relt = ref($elt);
-                last if (($relt && $relt ne 'Data::SExpression::Symbol') ||
+                last if (($relt && $relt eq 'Data::SExpression::Symbol') &&
                          "$elt" !~ /^:/);
             }
             $looks_hashrefian = ($i < $count) ? 0 : 1;
@@ -360,8 +361,10 @@ sub _hashify {
             }
         }
         if (!$looks_hashrefian) {
+            # just a plain old array
             $result = [ map { $self->_hashify($_) } @$thing ];
         } else {
+            # hashref in array's clothing
             $result = {};
             while (scalar(@$thing)) {
                 my($key,$val) = splice(@$thing,0,2);
@@ -374,7 +377,8 @@ sub _hashify {
             }
         }
     } elsif ($rthing eq 'HASH') {
-        # xxx can this happen?
+        # xxx can this happen?  Data::SExpression says so but mu will
+        # probably never send us one...
         $result = {};
         foreach my $key (keys(%$thing)) {
             my $val = $thing->{$key};
@@ -608,7 +612,39 @@ Search the message Xapian database.
 
 =cut
 
-sub find { shift->_execute('find',@_); }
+sub _next {
+    my($self) = @_;
+    my $href = $self->_parse();
+    unless ($href) {
+        $self->_read();
+        $href = $self->_parse();
+    }
+    return $href;
+}
+
+sub find {
+    my($self,@args) = @_;
+    my $results = { 'found' => 0, 'results' => [] };
+    my $resp = $self->_execute('find',@args);
+    return undef unless $resp;
+    die("mup: protocol broken!? missing (:erase t)") unless $resp->{'erase'};
+    my $result = $self->_next();
+    while ($result) {
+        if (exists($result->{'found'})) {
+            $results->{'found'} = int($result->{'found'});
+            $result = undef;
+        } elsif (!exists($result->{'docid'})) {
+            local $Data::Dumper::Terse = 1;
+            local $Data::Dumper::Indent = 0;
+            warn("mup: unexpected find result w/no docid: ".Dumper($result));
+            $result = undef;
+        } else {
+            push(@{$results->{'results'}}, $result);
+            $result = $self->_next();
+        }
+    }
+    return $results;
+}
 
 
 
