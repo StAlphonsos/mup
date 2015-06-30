@@ -173,6 +173,12 @@ has 'update_callback' => (
     default => undef,
     required => 0,
 );
+has 'no_updates' => (
+    is => 'rw',
+    isa => 'Bool',
+    default => 0,
+    required => 1,
+);
 
 sub _init {
     my $self = shift(@_);
@@ -266,7 +272,7 @@ sub _reset_parser {
 
 sub _parse {
     my($self,$in_update) = @_;
-    $in_update ||= 0;
+    $in_update ||= $self->no_updates;
     my($tries,$max_tries) = (0,$self->max_tries);
   INCOMPLETE:
     my $raw = $self->inbuf;
@@ -715,7 +721,18 @@ Make a new maildir under your Maildir basedir.
 
 =cut
 
-sub mkdir { shift->_execute('mkdir',@_); }
+sub mkdir {
+    my $self = shift(@_);
+    my $argref = _refify(@_);
+    # Make path relative to our Maildir unless it is absolute
+    my $path = $argref->{'path'};
+    die("mup: path is required") unless $path;
+    $path = join("/",$self->_our_maildir(),$path) unless $path =~ /^\//;
+    warn("mup: mkdir ".$argref->{'path'}." => mkdir $path\n")
+        if $self->verbose;
+    $argref->{'path'} = $path;
+    $self->_execute('mkdir',$argref);
+}
 
 
 =pod
@@ -730,8 +747,17 @@ Move a message from one maildir folder to another.
 
 =cut
 
-sub move { shift->_execute('move',@_); }
-
+sub move {
+    my $self = shift(@_);
+    my $argref = _refify(@_);
+    # Unlike mkdir's path arg, our maildir arg must start with a slash
+    my $maildir = $argref->{'maildir'};
+    $argref->{'maildir'} = "/$maildir" unless $maildir =~ /^\//;
+    $self->no_updates(1);
+    my $result = $self->_execute('move',$argref);
+    $self->no_updates(0);
+    return $result;
+}
 
 =pod
 
