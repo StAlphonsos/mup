@@ -5,3 +5,4 @@ TRASH
 *.bak
 Makefile.old
 MYMETA.*
+.templates
