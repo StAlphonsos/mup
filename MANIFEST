@@ -1,5 +1,3 @@
-.templates/template.pm
-.templates/template.t
 lib/mup.pm
 LICENSE
 Makefile.PL
