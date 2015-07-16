@@ -24,7 +24,7 @@ WriteMakefile(
 sub MY::postamble {
     print STDERR "To install completely:\n";
     print STDERR "    \$ make\n    \$ sudo make install\n";
-    print STDERR "\nDon't forget to read the README and the POD.\n";
+    print STDERR "\nDon't forget to read README.md and the POD.\n";
     print STDERR "\nEat your veggies.\n\n";
     return <<__MyTaRgEt__;
 OPENSSLCMD?=openssl

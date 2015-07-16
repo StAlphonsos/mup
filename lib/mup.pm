@@ -12,8 +12,8 @@ mup - perl interface to mu
 
   my $mu = mup->new();
 
-  my @results = $mu->find({ subject => 'something'});
-  print scalar(@results)." results for subject:something\n";
+  my $results = $mu->find({ subject => 'something'});
+  print "$results->{found} results for subject:something\n";
 
 =head1 DESCRIPTION
 
