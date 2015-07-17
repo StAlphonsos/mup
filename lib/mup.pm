@@ -56,7 +56,7 @@ use Moose;
 use Time::HiRes;
 use Data::Dumper;
 
-$VERSION = '0.1.0';
+$VERSION = '0.1.1';
 
 has 'dying' => (
     is => 'rw',
